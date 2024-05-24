@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{{ project.title }} - Map Previewer</title>
+
+        <link href="{{ url_for('static', filename='bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+        <link href="{{ url_for('static', filename='leaflet/leaflet.css') }}" rel="stylesheet">
+    </head>
+    <body class="d-flex flex-column min-vh-100 bg-light">
+        <main class="flex-fill">
+            <div class="container">
+                <div class="row pt-4 text-center">
+                    <h1 class="h2">{{ project.title }}</h1>
+                </div>
+                <div class="row pt-2">
+                    <div class="col-lg-9 mb-2">
+                        <div id="map" class="h-100"></div>
+                    </div>
+                    <div class="col mb-2">
+                        <div class="card mb-2">
+                            <div class="card-header">Project details</div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Project namespace</label>
+                                    <input type="text" class="form-control form-control-sm" readonly value="{{ project.namespace }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Tile URL</label>
+                                    <input type="text" class="form-control form-control-sm" readonly value="{{ url_for('tile.tile_project_home', project=project.namespace, _external=True) }}/{z}/{x}/{y}.png">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Tile source URL</label>
+                                    <input type="text" class="form-control form-control-sm" readonly value="{% if project.tile_source is not none %}{{ project.tile_source }}{% endif %}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Zoom level limit</label>
+                                    <div class="input-group input-group-sm mb-3">
+                                        <input type="text" class="form-control form-control-sm" readonly value="{% if project.tile_zoom_min is none %}0{% else %}{{ project.tile_zoom_min }}{% endif -%}">
+                                        <span class="input-group-text">-</span>
+                                        <input type="text" class="form-control form-control-sm" readonly value="{%- if project.tile_zoom_max is none %}inf.{% else %}{{ project.tile_zoom_max }}{% endif %}">
+                                    </div>
+                                </div>
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="downloadedOnly" checked>
+                                    <label class="form-check-label" for="downloadedOnly">
+                                        Offline
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card mb-2">
+                            <div class="card-header">Map toolbox</div>
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col">
+                                        <input id="zoomLevel" type="number" min="0" max="20" placeholder="Zoom" value="{{ project.previewer_zoom }}" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col">
+                                        <button id="setZoom" class="btn btn-sm btn-outline-primary">Zoom</button>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div id="inputPoint" class="input-group input-group-sm mb-3">
+                                        <input type="number" step="10e-6" placeholder="Latitude" {% if project.previewer_center_lat is not none %}value="{{ project.previewer_center_lat }}"{% endif %} class="form-control form-control-sm">
+                                        <span class="input-group-text">,</span>
+                                        <input type="number" step="10e-6" placeholder="Longitude" {% if project.previewer_center_lon is not none %}value="{{ project.previewer_center_lon }}"{% endif %} class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col">
+                                        <button id="setCenter" class="btn btn-sm btn-outline-primary">Set center</button>
+                                        <button id="addMarker" class="btn btn-sm btn-outline-primary">Add marker</button>
+                                        <button id="clrMarker" class="btn btn-sm btn-outline-danger">Clear markers</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Scripts -->
+        <script src="{{ url_for('static', filename='bootstrap/bootstrap.bundle.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+
+        <script>
+            // Project data
+            const basemap_url = '{{ url_for('tile.tile_project_home', project=project.namespace) }}/{z}/{x}/{y}.png';
+            const center_lat = {% if project.previewer_center_lat is not none %}{{ project.previewer_center_lat }}{% else %}0{% endif %}
+            const center_lon = {% if project.previewer_center_lon is not none %}{{ project.previewer_center_lon }}{% else %}0{% endif %}
+            const zoom_level = {% if project.previewer_zoom is not none %}{{ project.previewer_zoom }}{% else %}0{% endif %}
+
+            // Buttons
+            const isOfflineUse = document.querySelector('input#downloadedOnly');
+            const btnSetCenter = document.querySelector('button#setCenter');
+            const btnAddMarker = document.querySelector('button#addMarker');
+            const btnClrMarker = document.querySelector('button#clrMarker');
+            const inputPoint   = document.querySelector('div#inputPoint');
+            const inputZoom    = document.querySelector('input#zoomLevel');
+            const btnSetZoom   = document.querySelector('button#setZoom');
+
+            // Leaflet
+            const map         = L.map('map').setView([center_lat, center_lon], zoom_level);
+            const lyrBasemap  = L.tileLayer(basemap_url + "?offline=True").addTo(map);
+            const lyrMarker   = L.layerGroup();
+            const lyrPolyline = L.layerGroup();
+
+            lyrMarker.addTo(map);
+            lyrPolyline.addTo(map);
+
+            function setBasemap(map_url) {
+                console.log("Changing basemap to " + map_url);
+                lyrBasemap.setUrl(map_url, false);
+            }
+            isOfflineUse.addEventListener('change', () => setBasemap(isOfflineUse.checked ? basemap_url + "?offline=True" : basemap_url));
+
+            map.on('click', function(e) {
+                L.popup().setLatLng(e.latlng).setContent(`${e.latlng.lat}, ${e.latlng.lng}`).openOn(map);
+            });
+
+            btnSetCenter.addEventListener('click', () => map.panTo([inputPoint.children[0].value, inputPoint.children[2].value]));
+            btnAddMarker.addEventListener('click', () => L.marker([inputPoint.children[0].value, inputPoint.children[2].value]).addTo(lyrMarker));
+            btnClrMarker.addEventListener('click', () => lyrMarker.clearLayers());
+            btnSetZoom.addEventListener('click', () => map.setZoom(inputZoom.value));
+
+            document.addEventListener("DOMContentLoaded", () => setBasemap(isOfflineUse.checked ? basemap_url + "?offline=True" : basemap_url));
+        </script>
+
+    </body>
+
+</html>

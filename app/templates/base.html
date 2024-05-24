@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{% block title %}Dashboard{% endblock %}</title>
+        <link href="{{ url_for('static', filename='bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+{%- block head %}{% endblock -%}
+    </head>
+    <body class="d-flex flex-column min-vh-100 bg-light">
+        <main class="flex-fill">
+            <div class="container">
+                <div class="row pt-4">
+                    <div class="col-6">
+                        <h1 class="h2">{% block header_title %}{% endblock %}</h1>
+                    </div>
+                    <div class="col-6 text-end">
+                        {% block header_button %}{% endblock %}
+                    </div>
+                </div>
+                {% with messages = get_flashed_messages(with_categories=true) -%}
+                {% if messages -%}
+                <div class="row pt-2">
+                    {% for category, message in messages -%}
+                    {% if category == 'success' -%}
+                    {%- set alert_class = 'alert-success' -%}
+                    {%- elif category == 'error' -%}
+                    {%- set alert_class = 'alert-danger' -%}
+                    {%- elif category == 'warning' -%}
+                    {%- set alert_class = 'alert-warning' -%}
+                    {%- elif category == 'info' -%}
+                    {%- set alert_class = 'alert-info' -%}
+                    {%- else -%}
+                    {%- set alert_class = 'alert-primary' -%}
+                    {%- endif %}
+                    <div class="alert {{ alert_class }}" role="alert">
+                        {{ message }}
+                    </div>
+                    {%- endfor %}
+                </div>
+                {%- endif %}
+                {%- endwith %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+
+        <!-- Scripts -->
+        <script src="{{ url_for('static', filename='bootstrap/bootstrap.bundle.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='feather.min.js') }}"></script>
+
+        <script>
+            feather.replace();
+        </script>
+
+        {% block script %}{% endblock %}
+    </body>
+
+</html>

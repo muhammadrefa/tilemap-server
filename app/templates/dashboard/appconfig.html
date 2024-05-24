@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}App configuration{% endblock %}
+{% block header_title %}App configuration{% endblock %}
+{% block header_button -%}
+                        <a href="{{ url_for('dashboard.dashboard_main') }}"><button type="button" class="btn btn-sm btn-primary"><i data-feather="menu"></i> Dashboard</button></a>
+{%- endblock %}
+{% block content -%}
+                <div class="row pt-2 pb-4">
+                    <form method="post" action="{{ url_for('dashboard.dashboard_appconfig_save') }}">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Application data directory</label>
+                                    <input type="text" class="form-control" readonly value="{{ appdata_path }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Tile file path</label>
+                                    <input type="text" class="form-control" name="tile_filepath" placeholder="data/tiles/{project}/{z}/{x}/{y}.png" value="{{ appconfig.tile_filepath }}">
+                                    <div class="form-text">
+                                        Where to store tiles.
+                                        Use <code>{x}</code>, <code>{y}</code>, and <code>{z}</code> placeholders for X, Y, and zoom level respectively
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row pt-2">
+                            <div class="col">
+                                <button type="submit" class="btn btn-sm btn-success"><i data-feather="save"></i> Save configuration</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+{%- endblock %}

@@ -1,0 +1,12 @@
+[flask]
+secret_key=YOUR_SECRET_KEY_HERE
+host=0.0.0.0
+debug=0
+
+# Uncomment section below to enable ProxyFix
+#[proxy_fix]
+#x_for = 1
+#x_proto = 1
+#x_host = 0
+#x_port = 0
+#x_prefix = 0

@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Upload tiles to {{ project.title }}{% endblock %}
+{% block header_title %}{{ project.title }}{% endblock %}
+
+{% block head %}
+        <link href="{{ url_for('static', filename='leaflet/leaflet.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block header_button -%}
+                        <a href="{{ url_for('project.project_detail', project_ns=project.namespace) }}"><button type="button" class="btn btn-sm btn-danger"><i data-feather="x"></i> Cancel</button></a>
+{%- endblock %}
+
+{% block content -%}
+                <div class="row pt-2 pb-4">
+                    <form method="post" action="{{ url_for('project.project_upload_post', project_ns=project.namespace) }}" enctype="multipart/form-data">
+                        <div class="card">
+                            <div class="card-body mb-3">
+                                <div class="mb-3">
+                                    <label class="form-label">Archive to upload</label>
+                                    <input type="file" class="form-control" id="archive_file" name="archive_file" accept=".zip, application/zip">
+                                    <div class="form-text">
+                                        Archive file compressed as zip
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Directory structure pattern</label>
+                                    <input type="text" class="form-control" id="pattern" name="pattern" placeholder="{{ project.namespace }}/{z}/{x}/{y}.png">
+                                    <div class="form-text">
+                                        Path pattern inside archive
+                                        Use <code>{x}</code>, <code>{y}</code>, and <code>{z}</code> placeholders for X, Y, and zoom level respectively
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="row mb-2">
+                                            <div class="col-lg-3">
+                                                <div class="card mb-2">
+                                                    <div class="card-header">Map layers</div>
+                                                    <div class="card-body">
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" role="switch" id="lyrUploaded" checked>
+                                                            <label class="form-check-label" for="lyrUploaded">Uploaded</label>
+                                                        </div>
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" role="switch" id="lyrBasemap" checked>
+                                                            <label class="form-check-label" for="lyrBasemap">Base map</label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="card mb-2">
+                                                    <div class="card-header">Map toolbox</div>
+                                                    <div class="card-body">
+                                                        <div class="row mb-3">
+                                                            <div class="col">
+                                                                <input id="zoomLevel" type="number" min="0" max="20" placeholder="Zoom" value="{{ project.previewer_zoom }}" class="form-control form-control-sm">
+                                                            </div>
+                                                            <div class="col">
+                                                                <button type="button" id="setZoom" class="btn btn-sm btn-outline-primary">Zoom</button>
+                                                            </div>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <div id="inputPoint" class="input-group input-group-sm mb-3">
+                                                                <input type="number" step="10e-6" placeholder="Latitude" {% if project.previewer_center_lat is not none %}value="{{ project.previewer_center_lat }}"{% endif %} class="form-control form-control-sm">
+                                                                <span class="input-group-text">,</span>
+                                                                <input type="number" step="10e-6" placeholder="Longitude" {% if project.previewer_center_lon is not none %}value="{{ project.previewer_center_lon }}"{% endif %} class="form-control form-control-sm">
+                                                            </div>
+                                                            <div class="col">
+                                                                <button type="button" id="setCenter" class="btn btn-sm btn-outline-primary">Set center</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div id="previewing" class="align-items-center mb-2" hidden="">
+                                                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                                                    <span>Previewing...</span>
+                                                </div>
+                                            </div>
+                                            <div class="col">
+                                                <div id="map" style="height: 500px"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row pt-2">
+                            <div class="col">
+                                <button type="button" id="preview" class="btn btn-sm btn-primary"><i data-feather="monitor"></i> Preview</button>
+                                <button type="submit" id="submit" class="btn btn-sm btn-success"><i data-feather="upload"></i> Upload</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+{%- endblock %}
+
+{% block script -%}
+        <script src="{{ url_for('static', filename='jszip-sync.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+        <script src="{{ url_for('static', filename='Leaflet.TileLayer.Blob.js') }}"></script>
+
+        <script>
+            // Inputs
+            const txtPattern = document.querySelector('input#pattern');
+            const btnSubmit = document.querySelector('button#submit');
+            const btnPreview   = document.querySelector('button#preview');
+            const showUploaded = document.querySelector('input#lyrUploaded');
+            const showBasemap  = document.querySelector('input#lyrBasemap');
+            const btnSetCenter = document.querySelector('button#setCenter');
+            const inputPoint   = document.querySelector('div#inputPoint');
+            const inputZoom    = document.querySelector('input#zoomLevel');
+            const btnSetZoom   = document.querySelector('button#setZoom');
+
+            const previewing = document.querySelector('div#previewing');
+
+            // Zip processing
+            var zip = new JSZip();
+
+            // Leaflet for map previewer
+            const map         = L.map('map').setView([0, 0], 0);
+            const lyrBasemap  = L.tileLayer('{{ url_for('tile.tile_project_home', project=project.namespace) }}/{z}/{x}/{y}.png?offline=True').addTo(map);
+            const lyrUploaded = L.tileLayer.blob(getTileBlobUrl).addTo(map);
+
+            function openZip() {
+                btnPreview.disabled = true;
+                previewing.hidden = false;
+                zip = new JSZip();
+                var f = document.getElementById("archive_file").files[0];
+
+                zip.loadAsync(f)
+                    .then(function(zip) {
+                        alert("Valid ZIP file");
+
+                        // zip.forEach(function (relativePath, zipEntry) {
+                        //     console.log(zipEntry.name);
+                        // });
+                        lyrUploaded.redraw();
+
+                        previewing.hidden = true;
+                        btnPreview.disabled = false;
+                    }, function(e) {
+                        alert("Invalid ZIP file!");
+                        previewing.hidden = true;
+                        btnPreview.disabled = false;
+                    });
+            }
+
+            function getTileBlobUrl(coords) {
+                const zoom = coords["z"];
+                const x = coords["x"];
+                const y = coords["y"];
+
+                // console.info("getTileBlobUrl coords", coords);
+
+                try {
+                    const tile_path = txtPattern.value.replace("{z}", zoom.toString()).replace("{x}", x.toString()).replace("{y}", y.toString());
+                    // console.log("getTileBlobUrl path", tile_path);
+                    const tile_blob = zip.sync(() => {
+                        var res = null;
+                        zip.file(tile_path).async("blob").then((result) => {
+                            res = result;
+                        });
+                        return res;
+                    });
+                    return window.URL.createObjectURL(new Blob([tile_blob]));
+                    // return "";
+                } catch (e) {
+                    // console.error("getTileBlobUrl error", e);
+                }
+            }
+
+            btnPreview.addEventListener('click', () => openZip());
+            btnSetCenter.addEventListener('click', () => map.panTo([inputPoint.children[0].value, inputPoint.children[2].value]));
+            txtPattern.addEventListener('change', () => lyrUploaded.redraw());
+            btnSetZoom.addEventListener('click', () => map.setZoom(inputZoom.value));
+            showUploaded.addEventListener('change', () => lyrUploaded.setOpacity(showUploaded.checked ? 1.0 : 0.0));
+            showBasemap.addEventListener('change', () => lyrBasemap.setOpacity(showBasemap.checked ? 1.0 : 0.0));
+
+            document.addEventListener("DOMContentLoaded", () => {
+                lyrUploaded.setOpacity(showUploaded.checked ? 1.0 : 0.0);
+                lyrBasemap.setOpacity(showBasemap.checked ? 1.0 : 0.0);
+            });
+        </script>
+{%- endblock %}

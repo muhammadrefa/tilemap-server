@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% if project is undefined -%}
+    {%- set project = none -%}
+{%- endif -%}
+
+{% if is_new is not defined -%}
+    {%- set is_new = false -%}
+{%- endif -%}
+
+{% if old_data is defined -%}
+    {%- set project_title = old_data.title -%}
+    {%- set project_namespace = old_data.namespace -%}
+{%- else -%}
+    {%- set project_title = project.title -%}
+    {%- set project_namespace = project.namespace -%}
+{%- endif -%}
+
+{% block title %}{% if is_new %}New project{% else %}Edit project: {{ project_title }}{% endif %}{% endblock %}
+{% block header_title %}{% if is_new %}New project{% else %}{{ project_title }}{% endif %}{% endblock %}
+{% block header_button -%}
+                        <a href="{% if is_new %}{{ url_for('dashboard.dashboard_main') }}{% else %}{{ url_for('project.project_detail', project_ns=project_namespace) }}{% endif %}"><button type="button" class="btn btn-sm btn-danger"><i data-feather="x"></i> Cancel</button></a>
+{%- endblock %}
+{% block content -%}
+                <div class="row pt-2 pb-4">
+                    <form method="post" action="{% if is_new -%}{{ url_for('project.project_new_save') }}{%- else -%}{{ url_for('project.project_edit_save', project_ns=project_namespace) }}{%- endif %}">
+                        <div class="card">
+                            <div class="card-body">
+                                <h2 class="h4">Project data</h2>
+                                <hr>
+                                <div class="mb-3">
+                                    <label class="form-label">Project title</label>
+                                    <input type="text" class="form-control" name="title" placeholder="Project Title" value="{{ project.title }}">
+                                    <div class="form-text">
+                                      Human readable title
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Project namespace</label>
+                                    <input type="text" class="form-control" name="namespace" placeholder="project-namespace" value="{{ project.namespace }}" {% if not is_new -%}readonly{%- endif %}>
+                                    <div class="form-text">
+                                        Only alphanumeric, dash, and underscore
+                                        (<code>A-Z</code>, <code>a-z</code>, <code>0-9</code>,
+                                        <code>-</code>, <code>_</code>) are allowed.
+                                        Used as the URL to serve the tiles
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Tile source URLs scheme</label>
+                                    <textarea class="form-control" name="tile_source" rows="3" placeholder="http://s1.tilemap.provider/{z}/{x}/{y}.png&#x000D;&#x000A;http://s2.tilemap.provider/{z}/{x}/{y}.png">{% if project.tile_source is not none %}{{ project.tile_source }}{% endif %}</textarea>
+                                    <div class="form-text">
+                                        Required to download tiles from external source.
+                                        Use <code>{x}</code>, <code>{y}</code>, and <code>{z}</code> placeholders for X, Y, and zoom level respectively
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Zoom level limit</label>
+                                    <div class="input-group mb-3">
+                                        <input type="text" class="form-control" name="tile_zoom_min" placeholder="Zoom min." value="{% if project.tile_zoom_min is not none %}{{ project.tile_zoom_min }}{% endif %}">
+                                        <span class="input-group-text">-</span>
+                                        <input type="text" class="form-control" name="tile_zoom_max" placeholder="Zoom max." value="{% if project.tile_zoom_max is not none %}{{ project.tile_zoom_max }}{% endif %}">
+                                    </div>
+                                    <div class="form-text">
+                                      Optional. Check your tile map provider for details (e.g. OpenStreetMap forbids
+                                        downloading tiles at zoom level 13 or higher)
+                                    </div>
+                                </div>
+
+                                <div class="mb-5"></div>
+
+                                <h2 class="h4">Previewer option</h2>
+                                <hr>
+                                <div class="mb-3">
+                                    <label class="form-label">Map center coordinate</label>
+                                    <div id="inputPoint" class="input-group mb-3">
+                                        <input type="number" step="10e-6" name="previewer_center_lat" placeholder="Latitude" class="form-control" value="{% if project.previewer_center_lat is not none %}{{ project.previewer_center_lat }}{% endif %}">
+                                        <span class="input-group-text">,</span>
+                                        <input type="number" step="10e-6" name="previewer_center_lon" placeholder="Longitude" class="form-control" value="{% if project.previewer_center_lon is not none %}{{ project.previewer_center_lon }}{% endif %}">
+                                    </div>
+                                    <div class="form-text">
+                                      Default center coordinate when previewing using map previewer
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Default zoom level</label>
+                                    <input type="text" class="form-control" name="previewer_zoom" placeholder="Zoom level" value="{% if project.previewer_zoom is not none %}{{ project.previewer_zoom }}{% endif %}">
+                                    <div class="form-text">
+                                      Default zoom level when previewing using map previewer
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row pt-2">
+                            <div class="col">
+                                <button type="submit" class="btn btn-sm btn-success"><i data-feather="save"></i> Save project</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+{%- endblock %}

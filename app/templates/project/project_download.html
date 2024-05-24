@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Download tiles from {{ project.title }}{% endblock %}
+{% block header_title %}{{ project.title }}{% endblock %}
+{% block header_button -%}
+                        <a href="{{ url_for('project.project_detail', project_ns=project.namespace) }}"><button type="button" class="btn btn-sm btn-primary"><i data-feather="arrow-left"></i> Back</button></a>
+{%- endblock %}
+{% block content -%}
+                <div class="row pt-2 pb-4">
+<!--                    <form method="post" action="#">-->
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Default zoom level</label>
+                                    <input type="number" class="form-control" name="zoom_level" id="zoom_level" placeholder="Zoom level">
+                                    <div class="form-text">
+                                      Zoom level
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Bounding box</label>
+                                    <div id="inputPoint" class="input-group mb-3">
+                                        <span class="input-group-text">N</span>
+                                        <input type="number" step="10e-6" id="latN" placeholder="Latitude" class="form-control">
+                                        <span class="input-group-text">W</span>
+                                        <input type="number" step="10e-6" id="lonW" placeholder="Longitude" class="form-control">
+                                        <span class="input-group-text">S</span>
+                                        <input type="number" step="10e-6" id="latS" placeholder="Latitude" class="form-control">
+                                        <span class="input-group-text">E</span>
+                                        <input type="number" step="10e-6" id="lonE" placeholder="Longitude" class="form-control">
+                                    </div>
+                                    <div class="form-text">
+                                      Tile map bounding box
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Other option</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="downloadedOnly" checked>
+                                        <label class="form-check-label" for="downloadedOnly">Offline</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row pt-2">
+                            <div class="col">
+                                <button type="submit" id="download" class="btn btn-sm btn-success"><i data-feather="download"></i> Download tiles</button>
+                                <button type="submit" id="stop" class="btn btn-sm btn-danger d-none"><i data-feather="x"></i> Stop download</button>
+                                <button type="submit" id="retry" class="btn btn-sm btn-warning d-none"><i data-feather="rotate-ccw"></i> Re-download failed tiles</button>
+                            </div>
+                        </div>
+                        <div class="card mt-2 d-none" id="downloadStatistics">
+                            <div class="card-body">
+                                <p>Success: <span id="cnt_downloaded"></span></p>
+                                <p>Failed: <span id="cnt_failed"></span></p>
+                                <p>Processed: <span id="cnt_processed"></span></p>
+                                <div class="progress" role="progressbar">
+                                    <div id="progress" class="progress-bar progress-bar-striped" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+<!--                    </form>-->
+                </div>
+{%- endblock %}
+
+{% block script -%}
+        <script src="{{ url_for('static', filename='jszip.min.js') }}"></script>
+
+        <script>
+            const inpLatN = document.querySelector('input#latN');
+            const inpLonW = document.querySelector('input#lonW');
+            const inpLatS = document.querySelector('input#latS');
+            const inpLonE = document.querySelector('input#lonE');
+            const inpZoom = document.querySelector('input#zoom_level');
+            const chkDownloadedOnly = document.querySelector('input#downloadedOnly');
+            const divStatistics = document.querySelector('div#downloadStatistics');
+            const btnDownload = document.querySelector('button#download');
+            const btnStop = document.querySelector('button#stop');
+            const btnRetry = document.querySelector('button#retry');
+
+            const spanCntDownloaded = document.querySelector('span#cnt_downloaded');
+            const spanCntFailed = document.querySelector('span#cnt_failed');
+            const spanCntProcessed = document.querySelector('span#cnt_processed');
+            const progress = document.querySelector('div#progress');
+
+            const basemap_url = '{{ url_for('tile.tile_project_home', project=project.namespace) }}/{z}/{x}/{y}.png';
+
+            var bb = {"x1": 0, "x2": 0, "y1": 0, "y2": 0};
+            var last_tile = {"z": 0, "x": 0, "y": 0};
+
+            var tile_downloaded = new Map();
+            var tile_failed = [];
+            var tile_to_redownload = [];
+            var total_tiles = 0;
+            var total_downloader = 0;
+            var download = false;
+
+            const max_downloader = 100;
+
+            // Using function from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
+            function lon2tile(lon, zoom) { return (Math.floor((lon+180)/360*Math.pow(2,zoom))); }
+            function lat2tile(lat, zoom) { return (Math.floor((1-Math.log(Math.tan(lat*Math.PI/180) + 1/Math.cos(lat*Math.PI/180))/Math.PI)/2 *Math.pow(2,zoom))); }
+
+            function calculateTiles(zoom_level, lat_n, lon_w, lat_s, lon_e) {
+                var x1 = lon2tile(lon_w, zoom_level);
+                var y1 = lat2tile(lat_n, zoom_level);
+                var x2 = lon2tile(lon_e, zoom_level);
+                var y2 = lat2tile(lat_s, zoom_level);
+                // console.log(`x1 ${x1} y1 ${y1} x2 ${x2} y2 ${y2}`);
+
+                return {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2}
+            }
+
+            // Even if there is a race condition, it will return the same tile twice
+            function getNextTile() {
+                if (tile_to_redownload.length)
+                    return tile_to_redownload.shift();
+
+                if (!((last_tile["x"] == bb["x2"]) && (last_tile["y"] == bb["y2"]))) {
+                    var curr_tile = last_tile;
+                    curr_tile["y"] += 1;
+                    if (curr_tile["y"] > bb["y2"]) {
+                        curr_tile["x"] += 1;
+                        curr_tile["y"] = bb["y1"];
+                    }
+                    last_tile = curr_tile;
+                    return curr_tile;
+                }
+                else
+                    return null;
+            }
+
+            async function doDownload() {
+                const zoom = parseInt(inpZoom.value);
+                const latN = parseFloat(inpLatN.value);
+                const lonW = parseFloat(inpLonW.value);
+                const latS = parseFloat(inpLatS.value);
+                const lonE = parseFloat(inpLonE.value);
+
+                divStatistics.classList.add("d-none");
+                btnRetry.classList.add("d-none");
+                btnRetry.disabled = true;
+
+                tile_downloaded.clear();
+                tile_failed = [];
+                tile_to_redownload = [];
+                processed = 0
+                total_downloader = 0;
+                total_tiles = 0;
+
+                if ((latN < latS) || (lonE < lonW)) {
+                    alert("Re-check bounding box!");
+                    return;
+                }
+
+                bb = calculateTiles(zoom, latN, lonW, latS, lonE);
+                total_tiles = (Math.abs(bb['y2']-bb['y1']) + 1) * (Math.abs(bb['x2']-bb['x1']) + 1);
+                updateProgressBar();
+
+                console.log(bb);
+                console.log(`total ${total_tiles}`);
+
+                // if (total_tiles > 5000) {
+                //     alert("Too many tiles! Reduce area!");
+                //     return;
+                // }
+
+                divStatistics.classList.remove("d-none");
+                btnDownload.disabled = true;
+                inpLatN.disabled = true;
+                inpLonW.disabled = true;
+                inpLatS.disabled = true;
+                inpLonE.disabled = true;
+                inpZoom.disabled = true;
+                chkDownloadedOnly.disabled = true;
+
+                btnDownload.classList.add("d-none");
+
+                // var downloader = [];
+                // for (var x=bb["x1"]; x<=bb["x2"]; x++) {
+                //     for (var y=bb["y1"]; y<=bb["y2"]; y++) {
+                //         downloader.push(fetchTile(zoom, x, y));
+                //     }
+                // }
+                //
+                // Promise.allSettled(downloader).then((results) => {
+                //     // console.log(results);
+                //     downloadFinished();
+                // });
+
+                download = true;
+                btnStop.disabled = false;
+                btnStop.classList.remove("d-none");
+
+                last_tile = {"z": zoom, "x": bb["x1"], "y": bb["y1"]-1};
+                for (var i=0; i<max_downloader; i++) {
+                    const to_download = getNextTile();
+                    if (to_download != null) {
+                        fetchTile(to_download["z"], to_download["x"], to_download["y"]);
+                    }
+                }
+            }
+
+            async function doRetry() {
+                btnRetry.disabled = true;
+                btnDownload.disabled = true;
+                inpLatN.disabled = true;
+                inpLonW.disabled = true;
+                inpLatS.disabled = true;
+                inpLonE.disabled = true;
+                inpZoom.disabled = true;
+                chkDownloadedOnly.disabled = true;
+
+                btnDownload.classList.add("d-none");
+                btnRetry.classList.add("d-none");
+
+                tile_to_redownload = tile_failed;
+                tile_failed = [];
+                updateProgressBar();
+
+                // var downloader = [];
+                // current_failed.forEach((tile) => downloader.push(fetchTile(tile["z"], tile["x"], tile["y"])));
+                //
+                // Promise.allSettled(downloader).then((results) => {
+                //     // console.log(results);
+                //     downloadFinished();
+                // });
+
+                download = true;
+                btnStop.disabled = false;
+                btnStop.classList.remove("d-none");
+
+                for (var i=0; i<max_downloader; i++) {
+                    const to_download = getNextTile();
+                    if (to_download != null) {
+                        fetchTile(to_download["z"], to_download["x"], to_download["y"]);
+                    }
+                }
+            }
+
+            async function fetchTile(zoom, x, y) {
+                const is_offline = chkDownloadedOnly.checked;
+                const map_url = is_offline ? `${basemap_url}?offline=True` : basemap_url;
+                total_downloader += 1;
+                console.log("Downloading zoom " + zoom.toString() + " x " + x.toString() + " y " + y.toString());
+                try {
+                    const response = await fetch(map_url.replace("{z}", zoom.toString()).replace("{x}", x.toString()).replace("{y}", y.toString()));
+                    if (!response.ok) {
+                        tile_failed.push({"z": zoom, "x": x, "y": y});
+                        console.log(`Tile download failed! Status: ${response.status} (z ${zoom} x ${x} y ${y})`);
+                    }
+                    else {
+                        const img_blob = await response.blob();
+                        tile_downloaded.set({"z": zoom, "x": x, "y": y}, img_blob);
+                        console.log(`Tile download success! Status: ${response.status} (z ${zoom} x ${x} y ${y})`);
+                    }
+                } catch (error) {
+                    console.error("Error:", error);
+                }
+
+                updateProgressBar();
+                total_downloader -= 1;
+
+                if (download) {
+                    const to_download = getNextTile();
+                    if (to_download != null)
+                        fetchTile(zoom, to_download["x"], to_download["y"]);
+                    else if (total_downloader == 0)
+                        downloadFinished();
+                }
+                else if (total_downloader == 0)
+                    downloadFinished();
+            }
+
+            async function doStopDownload() {
+                btnStop.disabled = true;
+                download = false;
+            }
+
+            function downloadFinished() {
+                btnStop.classList.add("d-none");
+                download = false;
+                updateProgressBar();
+                console.log("Download finished!");
+                console.log(tile_downloaded);
+                console.log(tile_failed);
+
+                if (tile_downloaded.size) {
+                    var zip = new JSZip();
+                    for (const downloaded of tile_downloaded) {
+                        zip.file(`{{ project.namespace }}/${downloaded[0]['z']}/${downloaded[0]['x']}/${downloaded[0]['y']}.png`, downloaded[1]);
+                    }
+
+                    zip.generateAsync({type:"blob"}).then((zipBlob) => {
+                        const url = window.URL.createObjectURL(new Blob([zipBlob]));
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', `{{ project.namespace }}.zip`);
+                        // document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                    });
+                }
+
+                inpLatN.disabled = false;
+                inpLonW.disabled = false;
+                inpLatS.disabled = false;
+                inpLonE.disabled = false;
+                inpZoom.disabled = false;
+                chkDownloadedOnly.disabled = false;
+                btnDownload.disabled = false;
+                btnRetry.disabled = false;
+
+                btnDownload.classList.remove("d-none");
+                if (tile_failed.length > 0) {
+                    btnRetry.classList.remove("d-none");
+                }
+            }
+
+            function updateProgressBar() {
+                const total_downloaded = tile_downloaded.size;
+                const total_failed = tile_failed.length;
+
+                spanCntDownloaded.textContent = total_downloaded;
+                spanCntFailed.textContent = total_failed;
+                spanCntProcessed.textContent = `${total_downloaded + total_failed}/${total_tiles}`;
+
+                var percent_str = `${((total_downloaded + total_failed)/total_tiles * 100).toFixed(2)}%`;
+                progress.style.width = percent_str;
+                progress.innerText = percent_str;
+            }
+
+            btnDownload.addEventListener('click', () => doDownload());
+            btnRetry.addEventListener('click', () => doRetry());
+            btnStop.addEventListener('click', () => doStopDownload());
+        </script>
+{%- endblock %}

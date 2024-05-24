@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.title }}{% endblock %}
+{% block header_title %}{{ project.title }}{% endblock %}
+{% block header_button -%}
+                        <a href="{{ url_for('dashboard.dashboard_main') }}"><button type="button" class="btn btn-sm btn-primary"><i data-feather="menu"></i> Dashboard</button></a>
+{%- endblock %}
+{% block content -%}
+                <div class="row pt-2">
+                    <div class="card">
+                        <div class="card-body">
+                            <table class="table table-bordered caption-top">
+                                <caption><h2 class="h4">Project data</h2></caption>
+                                <tbody>
+                                    <tr>
+                                        <td>Project title</td>
+                                        <td>{{ project.title }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Project namespace</td>
+                                        <td><code>{{ project.namespace }}</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Tile URL</td>
+                                        <td>{{ url_for('tile.tile_project_home', project=project.namespace, _external=True) }}/{z}/{x}/{y}.png</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Tile source URLs</td>
+                                        <td>{% if project.tile_source is not none %}{{ project.tile_source | replace("\r\n", "<br/>") | safe }}{% endif %}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="rowspan=2">Zoom level limit</td>
+                                        <td>
+                                            {% if project.tile_zoom_min is none %}0{% else %}{{ project.tile_zoom_min }}{% endif -%}
+                                            -
+                                            {%- if project.tile_zoom_max is none %}inf.{% else %}{{ project.tile_zoom_max }}{% endif %}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <table class="table table-bordered caption-top">
+                                <caption><h2 class="h4">Previewer option</h2></caption>
+                                <tbody>
+                                    <tr>
+                                        <td>Center coordinate</td>
+                                        <td>
+                                            {%- if project.previewer_center_lat is not none and project.previewer_center_lon is not none -%}
+                                            {{ project.previewer_center_lat }}, {{ project.previewer_center_lon }}
+                                            {%- endif -%}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>Default zoom level</td>
+                                        <td>{% if project.previewer_zoom is not none -%}{{ project.previewer_zoom }}{%- endif %}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="row pt-2 pb-4">
+                    <div class="col">
+                        <a href="{{ url_for('preview.preview_main', project_ns=project.namespace) }}" target="_blank"><button type="button" class="btn btn-sm btn-secondary"><i data-feather="map-pin"></i> View map</button></a>
+                        <a href="{{ url_for('project.project_upload', project_ns=project.namespace) }}"><button type="button" class="btn btn-sm btn-primary"><i data-feather="upload"></i> Upload tiles</button></a>
+                        <a href="{{ url_for('project.project_download', project_ns=project.namespace) }}"><button type="button" class="btn btn-sm btn-primary"><i data-feather="download"></i> Download tiles</button></a>
+                        <a href="{{ url_for('project.project_edit', project_ns=project.namespace) }}"><button type="button" class="btn btn-sm btn-warning"><i data-feather="edit"></i> Edit</button></a>
+                        <a href="{{ url_for('project.project_delete', project_ns=project.namespace) }}"><button type="button" class="btn btn-sm btn-danger"><i data-feather="trash-2"></i> Delete</button></a>
+                    </div>
+                </div>
+{%- endblock %}
